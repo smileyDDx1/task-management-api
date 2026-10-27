@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 using TaskManagement.Api.Authorization;
+using TaskManagement.Api.Filters;
 using TaskManagement.Api.Services;
 using TaskManagement.Application.Common.Interfaces;
 using TaskManagement.Domain.Enums;
@@ -17,7 +18,7 @@ public static class ServiceCollectionExtensions
 {
     public static IServiceCollection AddApiServices(this IServiceCollection services, IConfiguration configuration)
     {
-        services.AddControllers()
+        services.AddControllers(options => options.Filters.Add<ValidationFilter>())
             .AddJsonOptions(options =>
             {
                 // send enums as "InProgress" instead of 1

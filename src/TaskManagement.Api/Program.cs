@@ -1,4 +1,5 @@
 using TaskManagement.Api.Extensions;
+using TaskManagement.Api.Middleware;
 using TaskManagement.Application;
 using TaskManagement.Infrastructure;
 
@@ -9,6 +10,8 @@ builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddApiServices(builder.Configuration);
 
 var app = builder.Build();
+
+app.UseMiddleware<ExceptionHandlingMiddleware>();
 
 if (app.Environment.IsDevelopment() || app.Configuration.GetValue<bool>("Swagger:Enabled"))
 {
