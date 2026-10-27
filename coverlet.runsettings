@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- used with: dotnet test --collect:"XPlat Code Coverage" --settings coverlet.runsettings -->
+<!-- used by "dotnet test" together with the XPlat Code Coverage collector (see README, Testing section).
+     note: xml comments can't contain two dashes in a row, so the full command is in the README -->
+
 <RunSettings>
   <DataCollectionRunSettings>
     <DataCollectors>
