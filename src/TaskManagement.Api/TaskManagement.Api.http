@@ -1,0 +1,103 @@
+### Requests I use while testing locally (VS / Rider http client)
+### Run "docker compose up" first, then log in and paste the token below
+
+@baseUrl = http://localhost:5000
+@token = paste-access-token-here
+
+### Register a new user (gets the Member role)
+POST {{baseUrl}}/api/auth/register
+Content-Type: application/json
+
+{
+  "fullName": "Jane Doe",
+  "email": "jane@example.com",
+  "password": "Password1"
+}
+
+### Login as the seeded admin
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@taskmanager.local",
+  "password": "Admin123!"
+}
+
+### Who am I
+GET {{baseUrl}}/api/users/me
+Authorization: Bearer {{token}}
+
+### List users (admin / manager)
+GET {{baseUrl}}/api/users?page=1&pageSize=10&search=jane
+Authorization: Bearer {{token}}
+
+### Promote a user to Manager (admin only)
+PUT {{baseUrl}}/api/users/2/role
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "role": "Manager"
+}
+
+### Create a project (admin / manager)
+POST {{baseUrl}}/api/projects
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "Website redesign",
+  "description": "New landing page and pricing page"
+}
+
+### Add a member to a project
+POST {{baseUrl}}/api/projects/1/members
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "userId": 2
+}
+
+### Create a task
+POST {{baseUrl}}/api/tasks
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "projectId": 1,
+  "title": "Design the pricing page",
+  "description": "3 plans, monthly/yearly toggle",
+  "priority": "High",
+  "dueDate": "2026-12-01T00:00:00Z",
+  "assigneeId": 2
+}
+
+### List tasks with filters + sorting + paging
+GET {{baseUrl}}/api/tasks?projectId=1&status=Todo&sortBy=dueDate&sortDirection=asc&page=1&pageSize=20
+Authorization: Bearer {{token}}
+
+### My open tasks that are overdue
+GET {{baseUrl}}/api/tasks?assignedToMe=true&isOverdue=true
+Authorization: Bearer {{token}}
+
+### Move a task to In Progress
+PATCH {{baseUrl}}/api/tasks/1/status
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "status": "InProgress"
+}
+
+### Unassign a task
+PATCH {{baseUrl}}/api/tasks/1/assignee
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "assigneeId": null
+}
+
+### Health check
+GET {{baseUrl}}/health
