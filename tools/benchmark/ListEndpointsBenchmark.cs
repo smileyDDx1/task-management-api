@@ -55,7 +55,9 @@ foreach (var (name, url, token) in scenarios)
     }
 
     var (throughput, failed) = await MeasureThroughputAsync(url, token, iterations);
-    var throughputText = failed == 0 ? $"{throughput:F0}" : $"{throughput:F1} ({failed}/{iterations} timed out)";
+    var throughputText = throughput < 10 ? $"{throughput:F1}" : $"{throughput:F0}";
+    if (failed > 0)
+        throughputText += $" ({failed}/{iterations} timed out)";
 
     timings.Sort();
     Console.WriteLine($"| {name} | {totalCount} | {timings.Average():F1} | {Percentile(timings, 50):F1} | {Percentile(timings, 95):F1} | {Percentile(timings, 99):F1} | {throughputText} |");
