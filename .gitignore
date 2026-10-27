@@ -1,0 +1,29 @@
+# build output
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+*.dll
+*.pdb
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+
+# test results / coverage
+TestResults/
+coverage/
+coverage-report/
+*.coverage
+*.cobertura.xml
+
+# logs
+logs/
+*.log
+
+# local secrets
+.env
+appsettings.Local.json
