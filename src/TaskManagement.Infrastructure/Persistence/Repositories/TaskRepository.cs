@@ -1,8 +1,10 @@
+using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
 using TaskManagement.Application.Common.Interfaces;
 using TaskManagement.Application.Common.Models;
 using TaskManagement.Application.Tasks;
 using TaskManagement.Domain.Entities;
+using TaskManagement.Domain.Enums;
 
 namespace TaskManagement.Infrastructure.Persistence.Repositories;
 
@@ -20,24 +22,21 @@ public class TaskRepository : ITaskRepository
         return _context.Tasks.FirstOrDefaultAsync(t => t.Id == id, cancellationToken);
     }
 
-    public async Task<TaskDto?> GetDtoByIdAsync(int id, CancellationToken cancellationToken = default)
+    public Task<TaskDto?> GetDtoByIdAsync(int id, CancellationToken cancellationToken = default)
     {
-        var task = await _context.Tasks
-            .Include(t => t.Project)
-            .Include(t => t.Assignee)
-            .Include(t => t.CreatedBy)
-            .FirstOrDefaultAsync(t => t.Id == id, cancellationToken);
-
-        return task is null ? null : MapToDto(task, DateTime.UtcNow);
+        return _context.Tasks
+            .AsNoTracking()
+            .Where(t => t.Id == id)
+            .Select(ToDto(DateTime.UtcNow))
+            .FirstOrDefaultAsync(cancellationToken);
     }
 
     public async Task<PagedResult<TaskDto>> GetPagedAsync(TaskQueryParameters query, int? visibleToUserId, CancellationToken cancellationToken = default)
     {
-        var tasks = _context.Tasks
-            .Include(t => t.Project)
-            .Include(t => t.Assignee)
-            .Include(t => t.CreatedBy)
-            .AsQueryable();
+        var now = DateTime.UtcNow;
+
+        // AsNoTracking: we only read here, so EF doesn't need to keep snapshots of every entity
+        var tasks = _context.Tasks.AsNoTracking();
 
         if (visibleToUserId.HasValue)
             tasks = tasks.Where(t => t.Project.Members.Any(m => m.UserId == visibleToUserId.Value));
@@ -60,22 +59,29 @@ public class TaskRepository : ITaskRepository
         if (query.DueTo.HasValue)
             tasks = tasks.Where(t => t.DueDate <= query.DueTo.Value);
 
+        if (query.IsOverdue == true)
+            tasks = tasks.Where(t => t.DueDate != null && t.DueDate < now && t.Status != TaskItemStatus.Done);
+        else if (query.IsOverdue == false)
+            tasks = tasks.Where(t => t.DueDate == null || t.DueDate >= now || t.Status == TaskItemStatus.Done);
+
         if (!string.IsNullOrWhiteSpace(query.Search))
-            tasks = tasks.Where(t => t.Title.Contains(query.Search.Trim()));
+        {
+            var search = query.Search.Trim();
+            tasks = tasks.Where(t => t.Title.Contains(search));
+        }
 
-        var list = await tasks.ToListAsync(cancellationToken);
-        var now = DateTime.UtcNow;
+        // COUNT(*) runs in the database instead of loading every row to count it
+        var totalCount = await tasks.CountAsync(cancellationToken);
 
-        if (query.IsOverdue.HasValue)
-            list = list.Where(t => t.IsOverdue(now) == query.IsOverdue.Value).ToList();
-
-        var items = Sort(list, query)
+        // sorting + OFFSET/FETCH in SQL, and Select() only reads the columns the dto needs
+        // (no Include needed, EF turns t.Project.Name into a join)
+        var items = await ApplySorting(tasks, query)
             .Skip(query.Skip)
             .Take(query.PageSize)
-            .Select(t => MapToDto(t, now))
-            .ToList();
+            .Select(ToDto(now))
+            .ToListAsync(cancellationToken);
 
-        return new PagedResult<TaskDto>(items, list.Count, query.Page, query.PageSize);
+        return new PagedResult<TaskDto>(items, totalCount, query.Page, query.PageSize);
     }
 
     public Task<int> UnassignUserInProjectAsync(int projectId, int userId, CancellationToken cancellationToken = default)
@@ -101,11 +107,11 @@ public class TaskRepository : ITaskRepository
         return _context.SaveChangesAsync(cancellationToken);
     }
 
-    private static IEnumerable<TaskItem> Sort(IEnumerable<TaskItem> tasks, TaskQueryParameters query)
+    private static IQueryable<TaskItem> ApplySorting(IQueryable<TaskItem> tasks, TaskQueryParameters query)
     {
         var desc = query.SortDirection.Equals("desc", StringComparison.OrdinalIgnoreCase);
 
-        return query.SortBy.ToLowerInvariant() switch
+        IOrderedQueryable<TaskItem> ordered = query.SortBy.ToLowerInvariant() switch
         {
             "duedate" => desc ? tasks.OrderByDescending(t => t.DueDate) : tasks.OrderBy(t => t.DueDate),
             "priority" => desc ? tasks.OrderByDescending(t => t.Priority) : tasks.OrderBy(t => t.Priority),
@@ -113,26 +119,26 @@ public class TaskRepository : ITaskRepository
             "status" => desc ? tasks.OrderByDescending(t => t.Status) : tasks.OrderBy(t => t.Status),
             _ => desc ? tasks.OrderByDescending(t => t.CreatedAt) : tasks.OrderBy(t => t.CreatedAt)
         };
+
+        // tie breaker so paging is stable when many rows have the same value
+        return ordered.ThenBy(t => t.Id);
     }
 
-    private static TaskDto MapToDto(TaskItem t, DateTime now)
-    {
-        return new TaskDto(
-            t.Id,
-            t.Title,
-            t.Description,
-            t.Status,
-            t.Priority,
-            t.DueDate,
-            t.CompletedAt,
-            t.IsOverdue(now),
-            t.ProjectId,
-            t.Project.Name,
-            t.AssigneeId,
-            t.Assignee?.FullName,
-            t.CreatedById,
-            t.CreatedBy.FullName,
-            t.CreatedAt,
-            t.UpdatedAt);
-    }
+    private static Expression<Func<TaskItem, TaskDto>> ToDto(DateTime now) => t => new TaskDto(
+        t.Id,
+        t.Title,
+        t.Description,
+        t.Status,
+        t.Priority,
+        t.DueDate,
+        t.CompletedAt,
+        t.DueDate != null && t.DueDate < now && t.Status != TaskItemStatus.Done,
+        t.ProjectId,
+        t.Project.Name,
+        t.AssigneeId,
+        t.Assignee != null ? t.Assignee.FullName : null,
+        t.CreatedById,
+        t.CreatedBy.FullName,
+        t.CreatedAt,
+        t.UpdatedAt);
 }

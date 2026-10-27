@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
 using TaskManagement.Application.Common.Interfaces;
 using TaskManagement.Application.Common.Models;
@@ -16,29 +17,36 @@ public class ProjectRepository : IProjectRepository
         _context = context;
     }
 
+    // counts are done with COUNT subqueries in SQL instead of loading every member and task
+    private static readonly Expression<Func<Project, ProjectDto>> ToDto = p => new ProjectDto(
+        p.Id,
+        p.Name,
+        p.Description,
+        p.OwnerId,
+        p.Owner.FullName,
+        p.Members.Count,
+        p.Tasks.Count,
+        p.Tasks.Count(t => t.Status != TaskItemStatus.Done),
+        p.CreatedAt,
+        p.UpdatedAt);
+
     public Task<Project?> GetByIdAsync(int id, CancellationToken cancellationToken = default)
     {
         return _context.Projects.FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
     }
 
-    public async Task<ProjectDto?> GetDtoByIdAsync(int id, CancellationToken cancellationToken = default)
+    public Task<ProjectDto?> GetDtoByIdAsync(int id, CancellationToken cancellationToken = default)
     {
-        var project = await _context.Projects
-            .Include(p => p.Owner)
-            .Include(p => p.Members)
-            .Include(p => p.Tasks)
-            .FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
-
-        return project is null ? null : MapToDto(project);
+        return _context.Projects
+            .AsNoTracking()
+            .Where(p => p.Id == id)
+            .Select(ToDto)
+            .FirstOrDefaultAsync(cancellationToken);
     }
 
     public async Task<PagedResult<ProjectDto>> GetPagedAsync(ProjectQueryParameters query, int? memberUserId, CancellationToken cancellationToken = default)
     {
-        var projects = _context.Projects
-            .Include(p => p.Owner)
-            .Include(p => p.Members)
-            .Include(p => p.Tasks)
-            .AsQueryable();
+        var projects = _context.Projects.AsNoTracking();
 
         if (memberUserId.HasValue)
         {
@@ -47,19 +55,21 @@ public class ProjectRepository : IProjectRepository
 
         if (!string.IsNullOrWhiteSpace(query.Search))
         {
-            projects = projects.Where(p => p.Name.Contains(query.Search.Trim()));
+            var search = query.Search.Trim();
+            projects = projects.Where(p => p.Name.Contains(search));
         }
 
-        var list = await projects.ToListAsync(cancellationToken);
+        var totalCount = await projects.CountAsync(cancellationToken);
 
-        var items = list
+        var items = await projects
             .OrderByDescending(p => p.CreatedAt)
+            .ThenBy(p => p.Id)
             .Skip(query.Skip)
             .Take(query.PageSize)
-            .Select(MapToDto)
-            .ToList();
+            .Select(ToDto)
+            .ToListAsync(cancellationToken);
 
-        return new PagedResult<ProjectDto>(items, list.Count, query.Page, query.PageSize);
+        return new PagedResult<ProjectDto>(items, totalCount, query.Page, query.PageSize);
     }
 
     public Task<bool> IsMemberAsync(int projectId, int userId, CancellationToken cancellationToken = default)
@@ -105,20 +115,5 @@ public class ProjectRepository : IProjectRepository
     public Task SaveChangesAsync(CancellationToken cancellationToken = default)
     {
         return _context.SaveChangesAsync(cancellationToken);
-    }
-
-    private static ProjectDto MapToDto(Project p)
-    {
-        return new ProjectDto(
-            p.Id,
-            p.Name,
-            p.Description,
-            p.OwnerId,
-            p.Owner.FullName,
-            p.Members.Count,
-            p.Tasks.Count,
-            p.Tasks.Count(t => t.Status != TaskItemStatus.Done),
-            p.CreatedAt,
-            p.UpdatedAt);
     }
 }
