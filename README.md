@@ -322,5 +322,6 @@ The admin "all tasks" page is still the slowest one because the default sort is 
 - No rate limiting on login.
 - Integration tests run on SQLite, so SQL Server specific behaviour and migrations are not covered by tests.
 - Offset pagination (`Skip/Take`) gets slower on very deep pages.
+- `sortBy=dueDate&sortDirection=asc` lists tasks without a due date first, because SQL Server sorts `NULL` before any value.
 
 More ideas in [docs/future-plans.md](docs/future-plans.md). Why I picked each tool: [docs/questions-answers.md](docs/questions-answers.md).
